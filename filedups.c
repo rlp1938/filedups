@@ -76,8 +76,6 @@ static prgvar_t
 int main(int argc, char **argv)
 { /* main */
   vsn = "1.0";
-  is_this_first_run(); // check first run
-  // data gathering
   options_t opt = process_options(argc, argv);
   prgvar_t *pv = setup_program(opt, argc, argv) ;
   return 0;
