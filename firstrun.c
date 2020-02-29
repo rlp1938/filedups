@@ -1,5 +1,5 @@
 /* firstrun.c
- * Copyright 2019 Robert L (Bob) Parker rlp1938@gmail.com
+ * Copyright 2020 Robert L (Bob) Parker rlp1938@gmail.com
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,8 +28,8 @@
  * into the existing config dir.
  * */
 int checkfirstrun(char *progname, char **names)
-{
-  // construct the user's path to .config
+{ /* If either the path to the named .config dir is absent or any one
+  *  of the files in the names[] list is absent return 0. */
   char upath[PATH_MAX];
   sprintf(upath, "%s/.config/%s/", getenv("HOME"), progname);
   if (!exists_dir(upath)) return 0;
