@@ -1,0 +1,153 @@
+.\" Hand written
+.\"
+.TH "FILEDUPS" "1" "2020-02-26" "" "General Commands Manual"
+.hy
+.SH NAME
+.PP
+\f[B]filedups\f[] - generates a new C program with properties
+determined by options chosen by the user.
+.SH SYNOPSIS
+.PP
+\f[B]filedups\f[] [\f[B]-h\f[]] [\f[B]--help\f[]]
+.PP
+\f[B]filedups\f[] [options] \f[I]projectName\f[]
+.SH DESCRIPTION
+.PP
+\f[B]filedups\f[] creates a new directory under the users designated
+\f[I]programs directory\f[], creates the main C program based on the
+project_name input.
+If the project_name was \f[I]someThing\f[] then the new project dir will
+be \f[I]Something\f[] and the main program \f[I]something.c\f[].
+The resulting binary will be \f[I]something\f[] and the manpage
+\f[I]something.1\f[].
+All required \f[I]autotools\f[] files will be generated and any optional
+software dependencies will be entered into the \f[I]Makefile.am\f[].
+Such dependencies, if found within the user designated source file
+sub-dir will be hard linked into the project dir, or if found within
+the user designated boilerplate dir will be copied there for subsequent
+editing. If a named dependency is not found a warning will be issued but
+it will be named within the \f[I]Makefile.am\f[] together with the other
+dependencies.
+.PP
+Options processing in the generated program is dealt with in accordance
+with the user specified input. This \f[B]--help\f[] option is displayed
+as a generated manpage.
+.SH OPTIONS
+.TP
+.B -h, --help
+Displays this help message then quits.
+
+.TP
+.B The options below may take lists of arguments.
+\f[B]--opt\f[] \f[I]name\f[] or '\f[I]list_of_names\f[]'
+The option may be invoked several times on individual \f[I]names\f[] or
+\f[I]lists\f[] or any combination of them. \f[B]Space\f[] separates the
+list items.
+
+.TP
+.B --depends, -d \f[I]software_name\f[R] or '\f[I]list_of_names'\f[]
+Specify \f[B]additional\f[] software dependencies to be recorded in
+Makefile.am.
+Names that have both a header file and C program file may be input as
+\f[I]name.h+c\f[]. These files need not exist at program generation
+time, however a warning will be issued in this case.
+
+By default, the following list of source files are provided, \f[I]
+files.c+h, str.c+h, dirs.c+h, \f[]and \f[I]firstrun.c+h.\f[]
+
+.TP
+.B --options-list, -n\f[] \f[I]optcode\f[] or '\f[I]list_of_opcodes\f[]'
+where each optcode \f[I]must\f[] be terminated
+with \f[B];\f[]
+.TP
+The \f[B]optcode\f[] is a comma separated list of fields in the
+following order:
+
+\f[B]short_option\f[] a single character followed by 0,1, or 2 of
+\f[B]:\f[] meaning that the option has no option argument, must have an
+option argument, or optionally may have an option argument respectively.
+
+\f[B]long_option\f[] the option long name.
+
+\f[B]var_name\f[] the C variable name.
+
+\f[B]ctype,\f[] legal C type of the variable (int, double, char*).
+
+\f[B]purpose\f[], used only for int type, maybe 'flag', 'acc', or 'num'.
+
+\f[B]default_value\f[] may be an empty string if the default is to be
+0, 0.0 or (char *)NULL, depending on the C data type.
+
+\f[B]max_value\f[] may be an empty string and if so it is ignored.
+Useful for using \f[I]acc\f[] for example to specify verbosity.
+
+\f[B]help_text\f[] This is the text to be used to describe the option
+in the man page. It may be left empty and if so, the value "FIXME" will
+entered by default. If the text needs to be very long, use only the
+headline text with the word 'FIXME' appended. This should avoid "too
+long errors".
+
+\f[B]run_func\f[], function to run, may be empty, if so 'FIXME' will be
+substituted. Anything provided by default here should have a function
+provided and code should be provided in main.c in ./templates dir.
+.TP
+.B --extra-dist, -x\f[] \f[I]data_file\f[] or \f[I]'list_of_data_files'\f[]
+File(s) to be installed as data in \f[I]/usr/local/share/\f[] such as
+config files.
+.TP
+.B --non-opt-arg, -N\f[] \f[I]argcode\f[] or '\f[I]list_of_argcodes\f[]' where each argcode \f[I]must\f[] be terminated with \f[B];\f[]
+.TP
+The \f[B]argcode\f[] is a comma separated list of fields in the following order:
+
+\f[B]var_name,\f[] the C variable name.
+
+\f[B]ctype,\f[] legal C type of the variable (int, double, char*).
+
+.SH EXAMPLE OPTCODES
+.TP
+.B -h, --help
+h,help,runhelp,int,flag,0,,Displays this help message then quits.
+,dohelp(0);
+
+.TP
+.B -v, --version
+v,version,runvsn,int,flag,0,,Displays program version number then quits.
+,dovsn();
+
+.TP
+.B -V, --verbosity
+v,verbosity,runverbose,int,acc,0,2,Determines verbosity of programs
+output. Default is 0, maximum verbosity is 2.,;
+
+.SH FILES (Generated project)
+.PP
+\f[I]INSTALL\f[] this provides additional information as a preamble to
+the standard GNU \f[I]INSTALL\f[] file.
+
+\f[I]autogen.sh\f[] run this to complete creating the autotools files
+set to be followed by the usual \f[B].configure\f[] && \f[B]make\f[]
+&& \f[B]sudo make install\f[].
+
+\f[I]./bin/build.sh\f[] does a complete build of the system using
+\f[B]clang\f[] as the compiler instead of \f[B]gcc\f[]. I provide it
+because I want to build code to be free of warnings from both compilers.
+Discard this script if you don't need it.
+
+\f[I]./bin/findfixme\f[] searches for the string "FIXME" in a selection of the
+generated project files.
+
+.SH FILES (filedups)
+.PP
+In addition to the files listed above there are a number of files of
+interest in the \f[I]./templates\f[] and \f[I]./bin\f[] directories.
+
+\f[I]./bin/gen\f[]
+
+\f[I] \f[]
+
+\f[I] \f[]
+
+\f[I] \f[]
+
+.SH SEE ALSO
+\f[B]getopt_long\f[](3)
