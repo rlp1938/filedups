@@ -13,7 +13,7 @@ man_MANS=filedups.1
 # next lines to be hand edited
 # send <whatever> to $(prefix)/share/
 newdir=$(datadir)/filedups
-new_DATA=filedups.cfg
+new_DATA=dname_grep.cfg
 # ensure that filedups.1 and any other config files get put in the
 # tarball. Also stops `make distcheck` bringing an error.
-EXTRA_DIST=filedups.1 filedups.cfg
+EXTRA_DIST=filedups.1 dname_grep.cfg
