@@ -106,11 +106,11 @@ dovsn(void)
 void
 is_this_first_run(void) 
 { /* test for first run and take action if it is */
-  char *names[2] = { "filedups.cfg", NULL };
+  char *names[2] = { "dname_grep.cfg", NULL };
   if (!checkfirstrun("filedups", names)) {
     firstrun("filedups", names);
     fprintf(stderr,
-          "Please edit filedups.cfg in %s/.config/filedups"
+          "Please edit dname_grep.cfg in %s/.config/filedups"
           " to meet your needs.\n",
           getenv("HOME"));
     exit(EXIT_SUCCESS);
@@ -136,4 +136,5 @@ static prgvar_t
   */
   if (opt.runhelp) dohelp(0); // will exit.
   if (opt.runvsn) dovsn(); // will exit.
+  is_this_first_run();
 } // setup_program()
