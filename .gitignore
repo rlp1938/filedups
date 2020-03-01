@@ -14,6 +14,7 @@
 /procdups.plist/
 /procdups.t2t
 /Makefile
+/Makefile.in
 /stamp-h1
 /test*
 /btsort.c
