@@ -72,12 +72,15 @@ static void
 free_prgvar_t(prgvar_t *pv);
 static prgvar_t
 *setup_program(options_t opt, int argc, char **argv);
+static char
+*validate_input(int argc, char **argv);
 
 int main(int argc, char **argv)
 { /* main */
   vsn = "1.0";
   options_t opt = process_options(argc, argv);
   prgvar_t *pv = setup_program(opt, argc, argv) ;
+  printf("%s\n", pv->dirpath);
   return 0;
 } // main()
 
@@ -137,4 +140,24 @@ static prgvar_t
   if (opt.runhelp) dohelp(0); // will exit.
   if (opt.runvsn) dovsn(); // will exit.
   is_this_first_run();
+  prgvar_t *pv = xcalloc(1, sizeof(struct prgvar_t));
+  pv->dirpath = validate_input(argc, argv); // if error, no return.
+  return pv;
 } // setup_program()
+
+static char
+*validate_input(int argc, char **argv)
+{ /* test for sane user input, either one dir or none. Return
+  valid dir path if it exists. */
+  static char p[PATH_MAX];
+  if (argc > 2) {
+    fprintf(stderr, "Input just one dir or by default none.\n");
+    exit(EXIT_FAILURE);
+  }
+  if (argv[1]) realpath(argv[1], p); else realpath("./", p);
+  if (!exists_dir(p)) {
+    fprintf(stderr, "Not a directory: %s\n", p);
+    exit(EXIT_FAILURE);
+  }
+  return p;
+} // validate_input()
