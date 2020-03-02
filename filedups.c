@@ -74,13 +74,20 @@ static prgvar_t
 *setup_program(options_t opt, int argc, char **argv);
 static char
 *validate_input(int argc, char **argv);
+static void
+fdrecursedir(const char *dirname, FILE *fpo);
+static int
+dname_grep(const char *dname);
+static char
+*make_files_list(const char *dir);
 
 int main(int argc, char **argv)
 { /* main */
   vsn = "1.0";
   options_t opt = process_options(argc, argv);
-  prgvar_t *pv = setup_program(opt, argc, argv) ;
+  prgvar_t *pv = setup_program(opt, argc, argv);
   printf("%s\n", pv->dirpath);
+  pv->files_list = make_files_list(pv->dirpath);
   return 0;
 } // main()
 
@@ -161,3 +168,54 @@ static char
   }
   return p;
 } // validate_input()
+
+static void
+fdrecursedir(const char *path, FILE *fpo)
+{ /* Record eligible files in a temporary file. */
+  DIR *dp = opendir(path);
+  if (!dp) {
+    perror(path);
+    exit(EXIT_FAILURE);
+  }
+  struct dirent *de;
+  while ((de = readdir(dp))) {
+    if (strcmp(de->d_name, ".") == 0 ) continue;
+    if (strcmp(de->d_name, "..") == 0) continue;
+    if (dname_grep(de->d_name) == 0) continue;
+    char joinbuf[PATH_MAX];
+    strcpy(joinbuf, path);
+    strcat(joinbuf, "/");
+    strcat(joinbuf, de->d_name);
+    switch (de->d_type) {
+    case DT_DIR:
+      fdrecursedir(joinbuf, fpo);
+      break;
+    case DT_REG:
+      fprintf(fpo, "%s\n", joinbuf);
+      break;
+    default:
+      break;  // no interest in anything except regular files and dirs.
+    } // switch()
+  } // while()
+  closedir(dp);
+} // fdrecursedir()
+
+static int
+dname_grep(const char *dname)
+{ /* Presently this is just a stub that does nothing.
+   * The intention is to act on a list of compiled regexs and return
+   * 0 on a match, -1 if a match is never found.
+   * The idea is to exclude specified dnames.
+   * */
+  return -1;
+} // dname_grep()
+
+static char
+*make_files_list(const char *dir)
+{ /* opens a temporary file and records the list of files in it. */
+  static char fn[NAME_MAX];
+  sprintf(fn, "/tmp/filedups%lu.lst", time(NULL));
+  FILE *fpo = dofopen(fn, "w");
+  fdrecursedir(dir, fpo);
+  dofclose(fpo);
+} // make_files_list()
