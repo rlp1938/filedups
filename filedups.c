@@ -44,15 +44,23 @@ typedef struct filerec_t {
   ino_t inode;
   size_t size;
   char *md5;
+  int delete_flag;
 } filerec_t;
 
 typedef struct prgvar_t {
   char *dirpath;
   char *files_list;
-  filerec_t **list1;
-  filerec_t **list2;
+  filerec_t *list1;
+  filerec_t *list2;
+  int lc1;  // record count of list1
+  int lc2;  // record count of list2
   int pages;
 } prgvar_t;
+
+typedef struct size_inode_t {
+  size_t size;
+  ino_t inode;
+} si_t;
 
 #include "dirs.h"
 #include "files.h"
@@ -80,6 +88,17 @@ static int
 dname_grep(const char *dname);
 static char
 *make_files_list(const char *dir);
+static mdata
+*file_data_to_list(prgvar_t *pv);
+static si_t
+*get_size_inode(const char *p);
+static void
+delete_unique_size(prgvar_t *pv);
+static int
+cmpinodep(const void *p1, const void *p2);
+static int
+cmpsize_inodep(const void *p1, const void *p2);
+
 
 int main(int argc, char **argv)
 { /* main */
@@ -87,7 +106,11 @@ int main(int argc, char **argv)
   options_t opt = process_options(argc, argv);
   prgvar_t *pv = setup_program(opt, argc, argv);
   printf("%s\n", pv->dirpath);
-  pv->files_list = make_files_list(pv->dirpath);
+  pv->files_list = make_files_list(pv->dirpath);  // writes a file.
+  mdata *fd = file_data_to_list(pv);
+  delete_unique_size(pv);
+  // delete the /tmp file.
+  // free the files data block.
   return 0;
 } // main()
 
@@ -218,4 +241,124 @@ static char
   FILE *fpo = dofopen(fn, "w");
   fdrecursedir(dir, fpo);
   dofclose(fpo);
+  return fn;
 } // make_files_list()
+
+static mdata
+*file_data_to_list(prgvar_t *pv)
+{ /* The files to consider for duplication are recorded in a file;
+   * they are to be included into a list of file records.
+   * Returning the mdata pointer allows the data block to be free'd.
+  */
+  mdata *fd = readfile(pv->files_list, 1, 0);
+  pv->lc1 = memlinestostr(fd);
+  pv->list1 = xcalloc(pv->lc1, sizeof(struct filerec_t));
+  char *cp = fd->fro;
+  int i;
+  for (i = 0; i < pv->lc1; i++) {
+    si_t *sit = get_size_inode(cp);
+    if (sit) { // possibly file has gone AWL.
+      pv->list1[i].path = cp;
+      pv->list1[i].inode = sit->inode;
+      pv->list1[i].size = sit->size;
+      cp += strlen(cp) + 1;
+    } // if()
+  } // for()
+  return fd;
+} // file_data_to_list()
+
+static si_t
+*get_size_inode(const char *p)
+{ /* stat the file and return the relevant data, or if the file has
+   * disappeared give an error message and return NULL.
+   * File loss is a real possibilty when processing $HOME, eg browser
+   * cache files reach end of lifetime. 
+  */
+  static si_t sit;
+  struct stat sb;
+  if (stat(p, &sb) == -1) {
+    fprintf(stderr, "File dissappeared: %s\n", p);
+    return NULL;
+  }
+  sit.size = sb.st_size;
+  sit.inode = sb.st_ino;
+  return &sit;
+} // get_size_inode()
+
+static void
+delete_unique_size(prgvar_t *pv)
+{ /* sort the list of file records on size and delete those having
+   * singular size.
+  */
+  qsort(pv->list1, pv->lc1, sizeof(struct filerec_t), cmpsize_inodep);
+  if (pv->list1[0].size != pv->list1[1].size)
+    pv->list1[0].delete_flag = 1;
+  int i;
+  for (i = 1; i < pv->lc1-1; i++) {
+    if (pv->list1[i].size != pv->list1[i-1].size &&
+        pv->list1[i].size != pv->list1[i+1].size) {
+      pv->list1[i].delete_flag = 1;
+    }
+  } // for(i...)
+  if (pv->list1[pv->lc1-1].size != pv->list1[pv->lc1-2].size)
+    pv->list1[pv->lc1-1].delete_flag = 1;
+  /* Now count the records to retain, those with size > 0, and have
+   * delete flag not set. */
+  pv->lc2 = 0;
+  for (i = 0; i < pv->lc1; i++) {
+    if (pv->list1[i].size > 0 && pv->list1[i].delete_flag == 0)
+      pv->lc2++;
+  } // for(i...)
+  /* Records are in order of size, and inode as a secondary key. These
+   * records will be placed in a second list, pv->list2 for further
+   * action.
+  */
+  pv->list2 = xcalloc(pv->lc2, sizeof(struct filerec_t));
+  int j = 0;
+  for (i = 0; i < pv->lc1; i++) {
+    if (pv->list1[i].size > 0 && pv->list1[i].delete_flag == 0) {
+      pv->list2[j] = pv->list1[i];
+      j++;
+    } // if()
+  } // for()
+} // delete_unique_size()
+
+static int
+cmpinodep(const void *p1, const void *p2)
+{
+  filerec_t *frp1 = (filerec_t *)p1;
+  filerec_t *frp2 = (filerec_t *)p2;
+
+  /* I can not just rely on a simple subtaction because I am operating
+   * on 8 byte numbers which can generate results that overflow an int.
+  */
+  if (frp1->inode > frp2->inode) {
+    return 1;
+  } else if (frp1->inode < frp2->inode) {
+    return -1;
+  }
+  return 0;
+} // cmpinodep()
+
+static int
+cmpsize_inodep(const void *p1, const void *p2)
+{ /* Will treat the inode number as a second place key. */
+  filerec_t *frp1 = (filerec_t *)p1;
+  filerec_t *frp2 = (filerec_t *)p2;
+
+  /* I can not just rely on a simple subtaction because I am operating
+   * on 8 byte numbers which can generate results that overflow an int.
+  */
+  if (frp1->size > frp2->size) {
+    return 1;
+  } else if (frp1->size < frp2->size) {
+    return -1;
+  } else {
+    if (frp1->inode > frp2->inode) {
+      return 1;
+    } else if (frp1->inode < frp2->inode) {
+      return -1;
+    }
+  }
+  return 0;
+} // cmpsize_inodep()
