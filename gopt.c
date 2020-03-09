@@ -24,11 +24,11 @@
 
 options_t process_options(int argc, char **argv)
 {
-  optstring = ":hvp:";  // initialise
+  optstring = ":hvp:d:i:";  // initialise
 
   options_t opts = {0}; // will clang bitch?
   // add any non-zero, non-NULL default values.
-  opts.pages = 1;
+
   int c;
 
   while(1) {
@@ -38,6 +38,8 @@ options_t process_options(int argc, char **argv)
     {"help",  0,  0,  'h' },
     {"version",  0,  0,  'v' },
     {"pages",  0,  0,  'p' },
+    {"data-size",  0,  0,  'd' },
+    {"data-increment",  0,  0,  'i' },
     {0,  0,  0,  0 }
     };
 
@@ -60,6 +62,12 @@ options_t process_options(int argc, char **argv)
     break;
     case 'p':
       opts.pages =  strtol(optarg, NULL, 10);
+    break;
+    case 'd':
+      opts.dat_size =  strtoul(optarg, NULL, 10);
+    break;
+    case 'i':
+      opts.dat_incr =  strtol(optarg, NULL, 10);
     break;
     case ':':
       fprintf(stderr, "Option %s requires an argument\n",
