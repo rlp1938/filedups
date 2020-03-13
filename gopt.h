@@ -27,8 +27,8 @@ typedef struct options_t {
   int     runhelp; // flag, dohelp(0)
   int     runvsn;  // flag, dovsn()
   int     pages;   // num
-  size_t  dat_size; // data block size.
-  size_t  dat_incr; // size to increase data space by.
+  char    dat_size[32]; // data block size.
+  char    dat_incr[32]; // size to increase data space by.
 } options_t;
 
 

@@ -64,10 +64,20 @@ options_t process_options(int argc, char **argv)
       opts.pages =  strtol(optarg, NULL, 10);
     break;
     case 'd':
-      opts.dat_size =  strtoul(optarg, NULL, 10);
+      if (strlen(optarg) < 32) {
+        strcpy(opts.dat_size, optarg);
+      } else {
+        fprintf(stderr, "Argument to big for buffer: %s\n", optarg);
+        exit(1);
+      }
     break;
     case 'i':
-      opts.dat_incr =  strtol(optarg, NULL, 10);
+      if (strlen(optarg) < 32) {
+        strcpy(opts.dat_incr, optarg);
+      } else {
+        fprintf(stderr, "Argument to big for buffer: %s\n", optarg);
+        exit(1);
+      }
     break;
     case ':':
       fprintf(stderr, "Option %s requires an argument\n",
