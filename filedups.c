@@ -108,6 +108,8 @@ static int
 cmpsize_inodep(const void *p1, const void *p2);
 static void
 mem_append(const char *p, prgvar_t *pv);
+static size_t
+str_sizes_to_number(const char *strnum);
 
 int main(int argc, char **argv)
 { /* main */
@@ -424,3 +426,29 @@ mem_append(const char *p, prgvar_t *pv)
   strcpy(pv->md->to, p);
   pv->md->to += len + 1;
 } // mem_append()
+
+static size_t
+str_sizes_to_number(const char *strnum)
+{ /* convert strings of human readable form to size_t, eg 1M, 100K...*/
+  size_t num = strtoul(strnum, NULL, 10);
+  size_t len = strlen(strnum);
+  char modifier = strnum[len-1];  // last char
+  int m;
+  switch (m) {
+    case k: K:
+      m = 1024;
+      break;
+    case m: M:
+      m = 1024 * 1024;
+      break;
+    case g: G:
+      m = 1024 * 1024 * 1024;
+      break;
+    case t: T:
+      m = 1024 * 1024 * 1024 * 1024;
+      break;
+    default:
+      m = 1;
+  }
+  return m * num;
+} // str_sizes_to_number()
