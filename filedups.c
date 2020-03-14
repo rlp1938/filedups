@@ -110,6 +110,8 @@ static void
 mem_append(const char *p, prgvar_t *pv);
 static size_t
 str_sizes_to_number(const char *strnum);
+static void
+delete_groups_of_files_sharing_size_and_inode(prgvar_t *pv);
 
 int main(int argc, char **argv)
 { /* main */
@@ -132,6 +134,8 @@ int main(int argc, char **argv)
   }
   make_filerecord_list(pv);
   delete_unique_size_file_records(pv);
+  delete_groups_of_files_sharing_size_and_inode(pv);
+  
   // delete the /tmp file.
   // free the files data block.
   return 0;
@@ -196,12 +200,16 @@ setup_program(options_t *opt, int argc, char **argv, prgvar_t *pv)
   /* data size has been set from read_config(), alter these settings,
    * alter these settings if options require it.
   */
-  if (opt->dat_size) pv->dat_size = opt->dat_size;
-  if (opt->dat_incr) pv->inc_size = opt->dat_incr;
+  size_t od = str_sizes_to_number(opt->dat_size);
+  if (od) pv->dat_size = od;
+  od = str_sizes_to_number(opt->dat_incr);
+  if (od) pv->inc_size = od;
   /* regardless of how the data size and it's increment were set,
    * ensure that they are set to a memory page boundary. */
-  pv->dat_size += (pv->dat_size % 4096);
-  pv->inc_size += (pv->inc_size % 4096);
+  size_t adjust = pv->dat_size % 4096;
+  if (adjust) pv->dat_size += (4096 - adjust);
+  adjust = pv->inc_size % 4096;
+  if (adjust) pv->inc_size += (4096 - adjust);
   static mdata md;
   md.fro = xcalloc(pv->dat_size, 1);
   md.limit = md.fro + pv->dat_size;
@@ -433,22 +441,69 @@ str_sizes_to_number(const char *strnum)
   size_t num = strtoul(strnum, NULL, 10);
   size_t len = strlen(strnum);
   char modifier = strnum[len-1];  // last char
-  int m;
-  switch (m) {
-    case k: K:
-      m = 1024;
+  size_t mul;
+  switch (modifier) {
+    case 'k':
+    case 'K':
+      mul = 1024;
       break;
-    case m: M:
-      m = 1024 * 1024;
+    case 'm': case 'M':
+      mul = 1024 * 1024;
       break;
-    case g: G:
-      m = 1024 * 1024 * 1024;
-      break;
-    case t: T:
-      m = 1024 * 1024 * 1024 * 1024;
+    case 'g': case 'G':
+      mul = 1024 * 1024 * 1024;
       break;
     default:
-      m = 1;
+      mul = 1;
   }
-  return m * num;
+  return mul * num;
 } // str_sizes_to_number()
+
+static void
+delete_groups_of_files_sharing_size_and_inode(prgvar_t *pv)
+{ /* As well as unique file sizes, already dealt with, there may be
+  * hard linked blocks of files which will manifest as blocks of
+  * identical sizes paired with identical inodes. This next will
+  * identify any such blocks.
+  * NB only blocks comprising all identical file sizes paired with
+  * identical inodes will be considered as singleton files. There are
+  * more complex possibilties whereby identical files are in more than
+  * one hard linked group. Any such groups will be identified at md5sum
+  * processing time.
+  * As this begins, the list sorted on size and inode, is already in
+  * place in pv->list2 and is counted by pv->lc2.
+  */
+  ino_t starting_inode = pv->list2[0].inode;
+  int starting_index = 0;
+  int i, j;
+  for (i = 1; i < pv->lc2; i++) {
+    if (pv->list2[i].size != pv->list2[i-1].size) {
+    // breaks on file size.
+      if (pv->list2[i-1].inode == starting_inode) {
+      // singleton inode block.
+        for (j = starting_index; j < i; j++) {
+          pv->list2[j].delete_flag = 1;
+        }
+      } // if (inode...)
+      starting_index = i;
+      starting_inode = pv->list2[i].inode;
+    } // if (size)
+  }
+  // count the number of items to send back to pv->list1.
+  i = 0;
+  for (j = 0; j < pv->lc2; j++) {
+    if (pv->list2[j].delete_flag == 0) i++;
+  }
+  pv->lc2 = i;
+  /* write the non-deletes back to the originting array. */
+  j = 0;
+  for (i = 0; i < pv->lc2; i++) {
+    if (pv->list2[i].delete_flag == 0) {
+      pv->list1[j] = pv->list2[i];
+      j++;
+    } // if()
+  } // for(i...)
+  pv->lc1 = j;
+  /* Now sort the list, pv->list1 in inode order. */
+  qsort(pv->list1, pv->lc1, sizeof(struct filerec_t), cmpinodep);
+} // delete_groups_of_files_sharing_size_and_inode()
