@@ -4,9 +4,10 @@
 AM_CFLAGS=-Wall -Wextra -g -O0 -D_GNU_SOURCE=1
 
 bin_PROGRAMS=filedups
+AM_LDFLAGS=-lmhash
 
 filedups_SOURCES=filedups.c dirs.c dirs.h files.c files.h str.c \
-str.h firstrun.h firstrun.c gopt.h gopt.c
+str.h firstrun.h firstrun.c gopt.h gopt.c calcmd5.h calcmd5.c
 
 man_MANS=filedups.1
 
