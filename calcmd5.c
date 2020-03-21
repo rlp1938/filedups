@@ -2,13 +2,19 @@
 #include "calcmd5.h"
 
 char
-*calcmd5(FILE *fpi, int pages)
+*calcmd5(const char *path, int pages)
 {
   size_t bytes_read;
   MHASH td;
   unsigned char buffer[4096];
   unsigned char hash[16]; /* fits MD5 */
   static char result[33];
+  FILE *fpi = fopen(path, "r");
+  if (!fpi) {
+    perror(path); // It's ok if a file or so goes AWL during processing.
+    strcpy(result, "");
+    return result;
+  }
 
   td = mhash_init(MHASH_MD5);
   if (td == MHASH_FAILED) {
@@ -35,5 +41,6 @@ char
   for (i = 0, j = 0; i < 16; i++, j += 2) {
     sprintf(&result[j], "%.2x", hash[i]);
   }
+  fclose(fpi);
   return result;
 } // calcmd5()

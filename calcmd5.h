@@ -10,6 +10,6 @@
 #include <mhash.h>
 
 char 
-*calcmd5(FILE *fpi, int pages);
+*calcmd5(const char *path, int pages);
 
 #endif /* calcmd5.h  */
