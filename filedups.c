@@ -43,13 +43,14 @@
 #include "files.h"
 #include "gopt.h"
 #include "firstrun.h"
+#include "calcmd5.h"
 
 // structs
 typedef struct filerec_t {
   char *path;
   ino_t inode;
   size_t size;
-  char *md5;
+  char md5[33];
   int delete_flag;
 } filerec_t;
 
@@ -112,6 +113,10 @@ static size_t
 str_sizes_to_number(const char *strnum);
 static void
 delete_groups_of_files_sharing_size_and_inode(prgvar_t *pv);
+static void
+calcmd5sums(filerec_t *list, int lc, int pages);
+static int
+cmpmd5p(const void *p1, const void *p2);
 
 int main(int argc, char **argv)
 { /* main */
@@ -135,7 +140,7 @@ int main(int argc, char **argv)
   make_filerecord_list(pv);
   delete_unique_size_file_records(pv);
   delete_groups_of_files_sharing_size_and_inode(pv);
-  
+  calcmd5sums(pv->list1, pv->lc1, pv->pages); // list1; last used list.
   // delete the /tmp file.
   // free the files data block.
   return 0;
@@ -507,3 +512,32 @@ delete_groups_of_files_sharing_size_and_inode(prgvar_t *pv)
   /* Now sort the list, pv->list1 in inode order. */
   qsort(pv->list1, pv->lc1, sizeof(struct filerec_t), cmpinodep);
 } // delete_groups_of_files_sharing_size_and_inode()
+
+static void
+calcmd5sums(filerec_t *list, int lc, int pages)
+{ /* Controls the md5sum calculation of a list of files. */
+  int i;
+  strcpy(list[0].md5, calcmd5(list[0].path, pages));
+  for (i = 1; i < lc-1; i++) {
+    if (list[i].inode == list[i-1].inode) {
+      strcpy(list[i].md5, list[i-1].md5);
+    } else {
+      strcpy(list[i].md5, calcmd5(list[i].path, pages));
+    }
+  } // for(i ...)
+  if (list[lc-1].inode == list[lc-2].inode) {
+    strcpy(list[lc-1].md5, list[lc-2].md5);
+  } else {
+    strcpy(list[lc-1].md5, calcmd5(list[lc-1].path, pages));
+  }
+  /* Now sort the list on md5sum w/ inode as secondary key */
+  qsort(list, lc, sizeof(struct filerec_t), cmpmd5p);
+} // calcmd5sums()
+
+static int
+cmpmd5p(const void *p1, const void *p2)
+{ /* md5 sums are just C strings. */
+  filerec_t *frp1 = (filerec_t *)p1;
+  filerec_t *frp2 = (filerec_t *)p2;
+  return strcmp(frp1->md5, frp2->md5);
+} // cmpmd5p()
