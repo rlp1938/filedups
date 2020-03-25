@@ -28,6 +28,7 @@ char
   if (pages > 0) {
     for (i = 0; i < pages; i++) {
       bytes_read = fread(buffer, 1, 4096, fpi);
+      mhash(td, buffer, bytes_read);
       if (bytes_read < 4096) break; // file size too small anyway.
     }
   } else {
