@@ -119,6 +119,8 @@ static int
 cmpmd5p(const void *p1, const void *p2);
 static void
 delete_unique_md5sum_records(prgvar_t *pv);
+static void
+serialise_duplicate_records(prgvar_t *pv);
 
 int main(int argc, char **argv)
 { /* main */
@@ -144,7 +146,8 @@ int main(int argc, char **argv)
   delete_groups_of_files_sharing_size_and_inode(pv);
   calcmd5sums(pv->list1, pv->lc1, pv->pages); // list1; last used list.
   delete_unique_md5sum_records(pv);
-  // delete the /tmp file.
+  serialise_duplicate_records(pv);
+
   // free the files data block.
   return 0;
 } // main()
@@ -587,3 +590,18 @@ delete_unique_md5sum_records(prgvar_t *pv)
   }
   pv->lc2 = j;  // redundant check.
 } // delete_unique_md5sum_records()
+
+void
+serialise_duplicate_records(prgvar_t *pv)
+{ /* Serialise the data records. Field separator is \t, record
+   * separator is \n. Output file is simply 'duplicates.lst' written
+   * into the dir we are in when filedups is run. The list of duplicates
+   * is in list2. */
+  FILE *fpo = fopen("duplicates.lst", "w");
+  int i;
+  for (i = 0; i < pv->lc2; i++) {
+    fprintf(fpo, "%s\t%lu\t%lu\t%s\n", pv->list2[i].md5,
+            pv->list2[i].inode, pv->list2[i].size, pv->list2[i].path);
+  }
+  fclose(fpo);
+} // serialise_duplicate_records()
