@@ -21,121 +21,214 @@
  * 
  */
 
+#include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <time.h>
 #include <sys/types.h>
+#include <dirent.h>
+#include <limits.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <dirent.h>
-#include <fcntl.h>
-#include <stdarg.h>
-#include <getopt.h>
-#include <ctype.h>
-#include <limits.h>
-#include <linux/limits.h>
-#include <libgen.h>
-#include <errno.h>
-#include <time.h>
 
-// structs
-typedef struct filerec_t {
-  char *path;
-  ino_t inode;
-  size_t size;
-  char *md5;
-} filerec_t;
+typedef struct fdata {
+  char *begin;
+  char *finis;
+} fdata;
 
-typedef struct prgvar_t {
-  char *dirpath;
-  char *files_list;
-  filerec_t **list1;
-  filerec_t **list2;
-  int pages;
-} prgvar_t;
+typedef struct opdata {
+  int first;    // first index of interest into list.
+  int last;     // last index of interest into list.    
+  char **list;  // array of C strings.
+} opdata;
 
-#include "dirs.h"
-#include "files.h"
-#include "gopt.h"
-#include "firstrun.h"
-
-// Globals
-static char *vsn;
-// headers
+static fdata
+*readfile(const char *path);
 static void
-dohelp(int forced);
+*xcalloc(size_t count, size_t size);
+static
+int lines2cstr(fdata *fd);
 static void
-dovsn(void);
+dosystem(const char *cmd);
 static void
-is_this_first_run(void);
+actondups(char **items);
+static char
+*parseline(const char *s);
 static void
-free_prgvar_t(prgvar_t *pv);
-static prgvar_t
-*setup_program(options_t opt, int argc, char **argv);
+rewrite_dups(char **list, int last);
 
-int main(int argc, char **argv)
-{ /* main */
-  vsn = "1.0";
-  is_this_first_run(); // check first run
-  // data gathering
-  options_t opt = process_options(argc, argv);
-  prgvar_t *pv = setup_program(opt, argc, argv) ;
+int main(void)
+{
+  fdata *fd = readfile("duplicates.lst");
+  int lc = lines2cstr(fd);
+  char **strarray = xcalloc(lc, sizeof(char **));
+  int i;
+  char *cp = fd->begin;
+  for (i = 0; i < lc; i++) {
+    strarray[i] = cp;
+    cp += strlen(cp) + 1;
+  }
+  actondups(strarray);
+  free(strarray);
+  free(fd);
   return 0;
 } // main()
 
-void
-dohelp(int forced)
-{ /* runs the manpage and then quits. */
-  char command[PATH_MAX];
-  char *dev = "./procdups.1";
-  char *prd = "procdups";
-  if (exists_file(dev)) {
-    sprintf(command, "man %s", dev);
-  } else {
-    sprintf(command, "man 1 %s", prd);
+fdata
+*readfile(const char *path)
+{ /* eats a file in one lump. */
+  fdata *fd = xcalloc(1, sizeof(struct fdata));
+  struct stat sb;
+  if (stat(path, &sb) == -1 ) {
+    perror(path);
+    exit(EXIT_FAILURE);
   }
-  xsystem(command, 1);
-  exit(forced);
-} // dohelp()
-
-void
-dovsn(void)
-{ /* print version number and quit. */
-  fprintf(stderr, "procdups, version %s\n", vsn);
-  exit(0);
-} // dovsn()
-
-void
-is_this_first_run(void) 
-{ /* test for first run and take action if it is */
-  char *names[2] = { "procdups.cfg", NULL };
-  if (!checkfirstrun("procdups", names)) {
-    firstrun("procdups", names);
-    fprintf(stderr,
-          "Please edit procdups.cfg in %s/.config/procdups"
-          " to meet your needs.\n",
-          getenv("HOME"));
-    exit(EXIT_SUCCESS);
+  if (!(S_ISREG(sb.st_mode))) {
+    fprintf(stderr, "Not a regular file: %s\n", path);
+    exit(EXIT_FAILURE);
   }
-} // is_this_first_run()
+  size_t _s = sb.st_size;
+  void *p = xcalloc(1, _s);
+  if (!p) {
+    perror("calloc");
+    exit(EXIT_FAILURE);
+  }
+  FILE *fpi = fopen(path, "r");
+  if (!fpi) {
+    perror(path);
+    exit(EXIT_FAILURE);
+  }
+  size_t bytes_read = fread(p, 1, _s, fpi);
+  if (bytes_read != _s) {
+    perror("fread");
+    exit(EXIT_FAILURE);
+  }
+  fd->begin = p;
+  fd->finis = p + _s;
+  return fd;
+} // readfile()
 
-void
-free_prgvar_t(prgvar_t *pv)
-{ /* frees the objects built on the heap. */
-  if (!pv) return;
-  if (pv->dirpath) free(pv->dirpath);
-  if (pv->files_list) free(pv->files_list);
-  if (pv->list1) free(pv->list1);
-  if (pv->list2) free(pv->list2);
-  free(pv);
-} // free_prgvar_t()
+static void
+*xcalloc(size_t _nmemb, size_t _size)
+{ /* calloc() with error handling */
+  void *p = calloc(_nmemb, _size);
+  if (!p) {
+    perror("calloc");
+    exit(EXIT_FAILURE);
+  }
+  return p;
+} // xcalloc()
 
-static prgvar_t
-*setup_program(options_t opt, int argc, char **argv)
-{ /* If --help or --version is a chosen option, action those and quit,
-   * otherwise check argv[1] for validity and set up those prgvar_t
-   * variables that are known at this stage.
-  */
-  if (opt.runhelp) dohelp(0); // will exit.
-  if (opt.runvsn) dovsn(); // will exit.
-} // setup_program()
+static
+int lines2cstr(fdata *fd)
+{ /* replaces all '\n' with '\0' and returns the count of it. */
+  size_t i, s;
+  int count = 0;
+  s = fd->finis - fd->begin;
+  for (i = 0; i < s; i++) {
+    if (fd->begin[i] == '\n') {
+      fd->begin[i] = '\0';
+      count++;
+    }
+  }
+  return count;
+} // lines2cstr()
+
+void dosystem(const char *cmd)
+{
+  const int status = system(cmd);
+
+    if (status == -1) {
+        fprintf(stderr, "system failed to execute: %s\n", cmd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (!WIFEXITED(status) || WEXITSTATUS(status)) {
+        fprintf(stderr, "%s failed with non-zero exit\n", cmd);
+        exit(EXIT_FAILURE);
+    }
+
+    return;
+} // dosystem()
+
+static void
+actondups(char **items)
+{ /* Display groups of dup, get user requirements, and act as
+  * specified */
+  int i = 0;
+  while (items[i]) {
+    dosystem("/usr/bin/clear");
+    char sumbuf[33];
+    strncpy(sumbuf, items[i], 32);
+    sumbuf[32] = '\0';
+    fprintf(stdout, "md5sum: %s\n", sumbuf);
+    fprintf(stdout, "%s\n", parseline(items[i]));
+    int first = i;
+    int j = i + 1;
+    while ((items[j] && strncmp(items[first], items[j], 8) == 0)) {
+      fprintf(stdout, "%s\n", parseline(items[j]));
+      j++;
+    }
+    int last = j;
+    fputs("Replies are case insesnitive.\n", stdout);
+    fprintf(stdout, "Quit without rewrite (q)  Rewrite dups.lst then"
+    " quit (s)\nShow next group, no action on this one (N)"
+    "\n? ");
+    char ans[4];
+    fgets(ans, 4, stdin);
+    switch (ans[0]) {
+      case 'q': // quit without rewriting 'dups.lst'
+      case 'Q':
+        return;
+        break;
+      case 's': // rewrite 'dups.lst' and then quit.
+      case 'S':
+        rewrite_dups(items, last);
+        return;
+        break;
+      case 'n': // show next group without doing anything.
+      case 'N':
+        break;
+      default:
+        break;
+    } // switch()
+    i = j;
+  } // while(items[i])
+} // actondups()
+
+static char
+*parseline(const char *s)
+{ /* breaks the data line into separate fields for display. */
+  char work[PATH_MAX + 128];
+  static char out[2 * PATH_MAX];
+  strcpy(work, s+33);
+  char *fr = work;
+  char *to = strchr(work, '\t'); *to = '\0';
+  strcpy(out, "inode ");
+  strcat(out, fr);
+  fr = to + 1;
+  to = strchr(fr, '\t'); *to = '\0';
+  strcat(out, "\tsize ");
+  strcat(out, fr);
+  fr = strstr(to+1, "/home");
+  strcat(out, "\n");
+  strcat(out, fr);
+  return out;
+} // parseline()
+
+static void
+rewrite_dups(char **list, int last)
+{ /* last is the index of the last dups record displayed; required to
+  * rewrite 'dups.lst' from the record folowing. */
+  FILE *fpo = fopen("dups.lst", "w");
+  if (!fpo) {
+    perror("dups.lst");
+    exit(EXIT_FAILURE);
+  }
+  int i;
+  for (i = last; list[i]; i++) {
+    fprintf(fpo, "%s\n", list[i]);
+  }
+  fclose(fpo);
+} // rewrite_dups()
