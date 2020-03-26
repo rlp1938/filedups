@@ -117,6 +117,8 @@ static void
 calcmd5sums(filerec_t *list, int lc, int pages);
 static int
 cmpmd5p(const void *p1, const void *p2);
+static void
+delete_unique_md5sum_records(prgvar_t *pv);
 
 int main(int argc, char **argv)
 { /* main */
@@ -141,6 +143,7 @@ int main(int argc, char **argv)
   delete_unique_size_file_records(pv);
   delete_groups_of_files_sharing_size_and_inode(pv);
   calcmd5sums(pv->list1, pv->lc1, pv->pages); // list1; last used list.
+  delete_unique_md5sum_records(pv);
   // delete the /tmp file.
   // free the files data block.
   return 0;
@@ -536,8 +539,51 @@ calcmd5sums(filerec_t *list, int lc, int pages)
 
 static int
 cmpmd5p(const void *p1, const void *p2)
-{ /* md5 sums are just C strings. */
+{ /* md5 sums are just C strings.
+   * Use inode size as secondary key.
+  */
   filerec_t *frp1 = (filerec_t *)p1;
   filerec_t *frp2 = (filerec_t *)p2;
-  return strcmp(frp1->md5, frp2->md5);
+  int ret = strcmp(frp1->md5, frp2->md5);
+  if (ret > 0) {
+    return 1;
+  } else if (ret < 0) {
+    return -1;
+  } else if (frp1->inode > frp2->inode) {
+    return 1;
+  } else if (frp1->inode < frp2->inode) {
+    return -1;
+  }
+  return 0; // Will happen where hard linked files exist.
 } // cmpmd5p()
+
+static void
+delete_unique_md5sum_records(prgvar_t *pv)
+{ /* mark unique md5sums for deletion. In this instance the source of
+   * the 'from' data is in list1, the 'to' data is go to list2.
+  */
+  if (strcmp(pv->list1[0].md5, pv->list1[1].md5) != 0)
+      pv->list1[0].delete_flag = 1; // the 0th record.
+  int i;
+  for (i = 1; i < pv->lc1-1; i++) { // all recs between 0th and last.
+    if (strcmp(pv->list1[i].md5, pv->list1[i-1].md5) != 0 &&
+        strcmp(pv->list1[i].md5, pv->list1[i+1].md5) != 0) {
+      pv->list1[i].delete_flag = 1;
+    }
+  }
+  if (strcmp(pv->list1[pv->lc1-1].md5, pv->list1[pv->lc1-2].md5) != 0)
+    pv->list1[pv->lc1-1].delete_flag = 1; // the last record.
+  pv->lc2 = 0;
+  for (i = 0; i < pv->lc1; i++) {
+    if (pv->list1[i].delete_flag == 0) pv->lc2++;
+  }
+  /* Copy records to list2, deleteable records excepted. */
+  int j = 0;
+  for (i = 0; i < pv->lc1; i++) {
+    if (pv->list1[i].delete_flag == 0) {
+      pv->list2[j] = pv->list1[i];
+      j++; 
+    }
+  }
+  pv->lc2 = j;  // redundant check.
+} // delete_unique_md5sum_records()
