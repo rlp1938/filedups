@@ -4,13 +4,12 @@
 AM_CFLAGS=-Wall -Wextra -g -O0 -D_GNU_SOURCE=1
 
 bin_PROGRAMS=filedups procdups
-AM_LDFLAGS=-lmhash
 
 filedups_SOURCES=filedups.c dirs.c dirs.h files.c files.h str.c \
 str.h firstrun.h firstrun.c gopt.h gopt.c calcmd5.h calcmd5.c
 filedups_LDADD=-lmhash
 
-procdups_SOURCES=
+procdups_SOURCES=procdups.c
 man_MANS=filedups.1
 
 # next lines to be hand edited
