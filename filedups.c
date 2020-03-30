@@ -111,6 +111,7 @@ static void
 mem_append(const char *p, prgvar_t *pv);
 static size_t
 str_sizes_to_number(const char *strnum);
+// TODO delete_groups ... not functioning correctly.
 static void
 delete_groups_of_files_sharing_size_and_inode(prgvar_t *pv);
 static void
@@ -476,39 +477,31 @@ delete_groups_of_files_sharing_size_and_inode(prgvar_t *pv)
   * hard linked blocks of files which will manifest as blocks of
   * identical sizes paired with identical inodes. This next will
   * identify any such blocks.
-  * NB only blocks comprising all identical file sizes paired with
-  * identical inodes will be considered as singleton files. There are
-  * more complex possibilties whereby identical files are in more than
-  * one hard linked group. Any such groups will be identified at md5sum
-  * processing time.
   * As this begins, the list sorted on size and inode, is already in
   * place in pv->list2 and is counted by pv->lc2.
   */
-  ino_t starting_inode = pv->list2[0].inode;
-  int starting_index = 0;
+  int count = 0;
   int i, j;
   for (i = 1; i < pv->lc2; i++) {
-    if (pv->list2[i].size != pv->list2[i-1].size) {
-    // breaks on file size.
-      if (pv->list2[i-1].inode == starting_inode) {
-      // singleton inode block.
-        for (j = starting_index; j < i; j++) {
+    if (pv->list2[i].size == pv->list2[i-1].size &&
+        pv->list2[i].inode == pv->list2[i-1].inode) {
+      count++;
+    } else {
+      if (count) {
+        for (j = i-count-1; j < i; j++) {
           pv->list2[j].delete_flag = 1;
-        }
-      } // if (inode...)
-      starting_index = i;
-      starting_inode = pv->list2[i].inode;
-    } // if (size)
-  }
+        } // for (j...)
+      } // if(count)
+      count = 0;
+    } // else
+  } // for(size and inode comparisons)
   // count the number of items to send back to pv->list1.
-  i = 0;
-  for (j = 0; j < pv->lc2; j++) {
+  for (j = 0, i = 0; j < pv->lc2; j++) {
     if (pv->list2[j].delete_flag == 0) i++;
   }
-  pv->lc2 = i;
-  /* write the non-deletes back to the originting array. */
-  j = 0;
-  for (i = 0; i < pv->lc2; i++) {
+  pv->lc1 = i;
+  /* write the non-deletes back to the originating array. */
+  for (i = 0, j  = 0; i < pv->lc2; i++) {
     if (pv->list2[i].delete_flag == 0) {
       pv->list1[j] = pv->list2[i];
       j++;
