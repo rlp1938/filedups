@@ -54,9 +54,15 @@ dosystem(const char *cmd);
 static void
 actondups(char **items);
 static char
-*parseline(const char *s);
+*showline(const char *s);
 static void
 rewrite_dups(char **list, int last);
+static void
+hardlink_dups(char **list, int first, int last);
+static ino_t
+get_inode(const char *items);
+static char
+*get_path(const char *items);
 
 int main(void)
 {
@@ -163,32 +169,38 @@ actondups(char **items)
     strncpy(sumbuf, items[i], 32);
     sumbuf[32] = '\0';
     fprintf(stdout, "md5sum: %s\n", sumbuf);
-    fprintf(stdout, "%s\n", parseline(items[i]));
+    fprintf(stdout, "%s\n", showline(items[i]));
     int first = i;
     int j = i + 1;
     while ((items[j] && strncmp(items[first], items[j], 8) == 0)) {
-      fprintf(stdout, "%s\n", parseline(items[j]));
+      fprintf(stdout, "%s\n", showline(items[j]));
       j++;
     }
     int last = j;
-    fputs("Replies are case insesnitive.\n", stdout);
-    fprintf(stdout, "Quit without rewrite (q)  Rewrite dups.lst then"
-    " quit (s)\nShow next group, no action on this one (N)"
-    "\n? ");
+    fputs("Replies are case insensitive.\n", stdout);
+    fprintf(stdout, "Quit without rewrite (q)\nRewrite "
+    " duplicates.lst then quit (s)\n"
+    "Show next group, no action on this one (N)\n"
+    "Hard link all of this group together (L)\n"
+    "? ");
     char ans[4];
     fgets(ans, 4, stdin);
     switch (ans[0]) {
-      case 'q': // quit without rewriting 'dups.lst'
+      case 'q': // quit without rewriting 'duplicates.lst'
       case 'Q':
         return;
         break;
-      case 's': // rewrite 'dups.lst' and then quit.
+      case 's': // rewrite 'duplicates.lst' and then quit.
       case 'S':
         rewrite_dups(items, last);
         return;
         break;
       case 'n': // show next group without doing anything.
       case 'N':
+        break;
+      case 'l': // Hard link all items together.
+      case 'L':
+        hardlink_dups(items, first, last);
         break;
       default:
         break;
@@ -198,7 +210,7 @@ actondups(char **items)
 } // actondups()
 
 static char
-*parseline(const char *s)
+*showline(const char *s)
 { /* breaks the data line into separate fields for display. */
   char work[PATH_MAX + 128];
   static char out[2 * PATH_MAX];
@@ -215,7 +227,7 @@ static char
   strcat(out, "\n");
   strcat(out, fr);
   return out;
-} // parseline()
+} // showline()
 
 static void
 rewrite_dups(char **list, int last)
@@ -232,3 +244,46 @@ rewrite_dups(char **list, int last)
   }
   fclose(fpo);
 } // rewrite_dups()
+
+static void
+hardlink_dups(char **list, int first, int last)
+{ /* Using the first path as the master, delete and link all other
+   * paths within this group to that.*/
+  int i;
+  int masteridx = first;
+  ino_t masterinode = get_inode(list[masteridx]);
+  char *masterpath = get_path(list[masteridx]);
+  for (i = first+1; i < last; i++) {
+    ino_t inode = get_inode(list[i]);
+    if (inode != masterinode) { // hardlinked blocks may exist.
+      char *p = get_path(list[i]);
+      if (unlink(p) == -1) {
+        perror(p);  // a file may go AWL since list creation.
+      } else {
+        sync();
+        link(masterpath, p);
+      }
+    } // if(inode ...)
+  } // for()
+} // hardlink_dups()
+
+static ino_t
+get_inode(const char *line)
+{ /* Extracts the inode from the list item containing it. Fields are
+   * 1. md5sum, 2, inode as string, 3. file size as string, 4. path.
+   * All separated by <tab>.
+  */
+  char *inostr = strchr(line, '\t');
+  /* The string form of the inode is wrapped in '\t', strtol will
+   * automatically work with that. */
+  ino_t res = strtoul(inostr, NULL, 10);
+  return res;
+} // get_inode()
+
+static char
+*get_path(const char *line)
+{ /* Extracts the path from list item containing it. See get_inode().
+   * */
+   char *ret = strstr(line, "/home");
+   return ret;
+} // get_path()
