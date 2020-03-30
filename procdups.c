@@ -64,9 +64,14 @@ get_inode(const char *items);
 static char
 *get_path(const char *items);
 
-int main(void)
+int main(int argc, char **argv)
 {
-  fdata *fd = readfile("duplicates.lst");
+  fdata *fd;
+  if (argc == 1) {
+    fd = readfile("duplicates.lst");
+  } else {
+    fd = readfile(argv[1]);
+  }
   int lc = lines2cstr(fd);
   char **strarray = xcalloc(lc, sizeof(char **));
   int i;
