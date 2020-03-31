@@ -63,6 +63,8 @@ static ino_t
 get_inode(const char *items);
 static char
 *get_path(const char *items);
+static void
+delete_dups(char **list, int first, int last);
 
 int main(int argc, char **argv)
 {
@@ -187,6 +189,7 @@ actondups(char **items)
     " duplicates.lst then quit (s)\n"
     "Show next group, no action on this one (N)\n"
     "Hard link all of this group together (L)\n"
+    "Delete all files in this displayed block (d)\n"
     "? ");
     char ans[4];
     fgets(ans, 4, stdin);
@@ -206,6 +209,10 @@ actondups(char **items)
       case 'l': // Hard link all items together.
       case 'L':
         hardlink_dups(items, first, last);
+        break;
+      case 'd': // Delete all files in this block.
+      case 'D':
+        delete_dups(items, first, last);
         break;
       default:
         break;
@@ -292,3 +299,16 @@ static char
    char *ret = strstr(line, "/home");
    return ret;
 } // get_path()
+
+static void
+delete_dups(char **list, int first, int last)
+{ /* Delete all displayed files in this block. */
+  int i;
+  for (i = first; i < last; i++) {
+    char *p = get_path(list[i]);
+    if (unlink(p) == -1) {
+      perror(p);  // It's ok for a file to go AWL in this operation.
+    }
+  }
+  sync();
+} // delete_dups()
