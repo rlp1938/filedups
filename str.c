@@ -43,7 +43,7 @@ char
 {/* Make a temporary file name.
   * The name will be the concatenation of: "/tmp/", prname, $USER, pid
   * and extrafn. Extrafn may be NULL if the application needs only one
-  * filename. If thename is NULL a buffer of PATH_MAX will be created
+  * filename. If 'thename' is NULL a buffer of PATH_MAX will be created
   * and the returned result must be freed after use, otherwise thename
   * should be a buffer of PATH_MAX size allocated by the caller.
 */
