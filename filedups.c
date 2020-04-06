@@ -54,6 +54,12 @@ typedef struct filerec_t {
   int delete_flag;
 } filerec_t;
 
+typedef struct excl_t {
+  char *text;
+  size_t len;
+  int typ;
+} excl_t;
+
 typedef struct prgvar_t {
   char *dirpath;
   char *files_list;
@@ -67,6 +73,7 @@ typedef struct prgvar_t {
   size_t dat_size;  // initial memory allocation for files_list.
   size_t inc_size;  // If dat_size bytes is too small, add this value.
   mdata *md;        // describes a block of chars in memory.
+  excl_t *excludes; // a temporary file with d_name lists to exclude.
 } prgvar_t;
 
 typedef struct size_inode_t {
@@ -94,7 +101,7 @@ validate_input(const char *path);
 static void
 fdrecursedir(const char *dirname, prgvar_t *pv);
 static int
-dname_grep(const char *dname);
+dname_test(const excl_t *exclude_these, const char *dname);
 static void
 make_filerecord_list(prgvar_t *pv);
 static void
@@ -111,7 +118,6 @@ static void
 mem_append(const char *p, prgvar_t *pv);
 static size_t
 str_sizes_to_number(const char *strnum);
-// TODO delete_groups ... not functioning correctly.
 static void
 delete_groups_of_files_sharing_size_and_inode(prgvar_t *pv);
 static void
@@ -122,6 +128,11 @@ static void
 delete_unique_md5sum_records(prgvar_t *pv);
 static void
 serialise_duplicate_records(prgvar_t *pv);
+static char
+*prepare_excludes(const char *progname);
+static excl_t
+*compile_excludes(const char *progname);
+
 
 int main(int argc, char **argv)
 { /* main */
@@ -178,11 +189,11 @@ dovsn(void)
 void
 is_this_first_run(void) 
 { /* test for first run and take action if it is */
-  char *names[2] = { "dname_grep.cfg", NULL };
+  char *names[2] = { "dname_test.cfg", NULL };
   if (!checkfirstrun("filedups", names)) {
     firstrun("filedups", names);
     fprintf(stderr,
-          "Please edit dname_grep.cfg in %s/.config/filedups"
+          "Please edit dname_test.cfg in %s/.config/filedups"
           " to meet your needs.\n",
           getenv("HOME"));
     exit(EXIT_SUCCESS);
@@ -251,7 +262,7 @@ fdrecursedir(const char *path, prgvar_t *pv)
   while ((de = readdir(dp))) {
     if (strcmp(de->d_name, ".") == 0 ) continue;
     if (strcmp(de->d_name, "..") == 0) continue;
-    if (dname_grep(de->d_name) == 0) continue;
+    if (dname_test(pv->excludes, de->d_name) == 0) continue;
     char joinbuf[PATH_MAX];
     strcpy(joinbuf, path);
     strcat(joinbuf, "/");
@@ -272,14 +283,52 @@ fdrecursedir(const char *path, prgvar_t *pv)
 } // fdrecursedir()
 
 static int
-dname_grep(const char *dname)
-{ /* Presently this is just a stub that does nothing.
-   * The intention is to act on a list of compiled regexs and return
-   * 0 on a match, -1 if a match is never found.
-   * The idea is to exclude specified dnames.
+dname_test(const excl_t *excl_these, const char *dname)
+{ /* Test d_names against a list of names to exclude.
+   * Returns 0 if a match is found, -1 otherwise.
    * */
+  int i, res;
+  char *cp;
+  size_t dnlen = strlen(dname); // sometimes allows truncated testing.
+  for (i = 0; excl_these[i].typ != -1; i++) {
+    switch (excl_these[i].typ) {
+      case 0: // test string 'str'.
+        if (dnlen < excl_these[i].len) break;
+        cp = strstr(dname, excl_these[i].text);
+        if (cp) {
+          fprintf(stderr, "Excluding %s\n",dname);
+          return 0;
+        }
+        break;
+      case 1: // test string '^str'
+        if (dnlen < excl_these[i].len) break;
+        res = strncmp(dname, excl_these[i].text, excl_these[i].len);
+        if (res == 0) {
+          fprintf(stderr, "Excluding %s\n",dname);
+          return 0;
+        }
+        break;
+      case 2: // test string 'str$'
+        if (dnlen < excl_these[i].len) break;
+        cp = &dname[dnlen - excl_these[i].len];
+        res = strcmp(cp, excl_these[i].text);
+        if (res == 0) {
+          fprintf(stderr, "Excluding %s\n",dname);
+          return 0;
+        }
+        break;
+      case 3: // test string '^str$'
+        if (dnlen != excl_these[i].len) break;
+        res = strcmp(dname, excl_these[i].text);
+        if (res == 0) {
+          fprintf(stderr, "Excluding %s\n",dname);
+          return 0;
+        }
+        break;
+    } // switch()
+  } // for()
   return -1;
-} // dname_grep()
+} // dname_test()
 
 static void
 make_files_list(prgvar_t *pv)
@@ -409,6 +458,8 @@ static prgvar_t
    * really did read a config file. */
   static prgvar_t pv = {0};
   static mdata md;
+  char *exclfile = prepare_excludes("filedups");
+  pv.excludes = compile_excludes(exclfile);
   pv.dat_size = 1024 * 1024;  // 1 meg so far;
   pv.inc_size = pv.dat_size / 10; // may be replaced by options.
   pv.pages = 1; // option can vary this.
@@ -598,3 +649,114 @@ serialise_duplicate_records(prgvar_t *pv)
   }
   fclose(fpo);
 } // serialise_duplicate_records()
+
+char
+*prepare_excludes(const char *progname)
+{ /* read the excludes file, strip out the comments, write the result
+   * to a temporary file for use by the dir recursion routine.
+  */
+  char filefrom[PATH_MAX];
+  static char fileto[PATH_MAX];
+  sprintf(filefrom, "%s/.config/filedups/dname_test.cfg",
+            getenv("HOME"));
+  mktmpfn("filedups", "excl", fileto);
+  mdata *md = readfile(filefrom, 1, 0);
+  // strip comments
+  char *cp = md->fro;
+  char inter[PATH_MAX];
+  char *op = inter; // intermediate buffer
+  int incmnt = 0;
+  while (cp < md->to) {
+    switch (*cp) {
+      case '#':
+        incmnt = 1;
+        break;
+      case '\n':
+        *op = *cp;
+        op++;
+        incmnt = 0;
+        break;
+      default:
+        if (!incmnt) {
+          *op = *cp;
+          op++;
+        } // if()
+      } // switch
+    cp++;
+  }
+  char out[NAME_MAX];
+  cp = inter;
+  op = out;
+  
+  while (*cp) {
+    while(*cp && isspace(*cp)) cp++;
+    while(*cp && !isspace(*cp)) {
+      *op = *cp;
+      op++; cp++;
+    }
+    if (*(op-1) != '\n') *op = '\n';
+    op++; cp++;
+  }
+  writefile(fileto, out, out+strlen(out), "w");
+  return fileto;
+} // prepare_excludes()
+
+static excl_t
+*compile_excludes(const char* fn)
+{ /* the file is a simple list of exclusion patterns, compile these
+   * to be accessed by fdrecursedir(). The compiled result comprises
+   * an array of structs carrying the unadorned search strings and an
+   * index pointing to the search method to be used.
+  */
+  mdata *md = readfile(fn, 1, 0);
+  char *cp = md->fro;
+  int count = 0;
+  while (cp < md->to) {
+    if (*cp == '\n') {
+      *cp = 0;
+      count++;
+    }
+    cp++;
+  } // if()
+  excl_t *exlist = xcalloc(count+1, sizeof(struct excl_t));
+  char buf[NAME_MAX];
+  size_t sz;
+  cp = md->fro;
+  int i, typ;
+  for (i = 0; i < count; i++) {
+    sz = strlen(cp);
+    strcpy(buf, cp);
+    if (buf[0] == '^' && buf[sz-1] == '$') {
+      typ = 3;
+      sz -= 2;
+      memmove(buf, buf+1, sz);
+      buf[sz] = 0;
+    } else if (buf[0] == '^' && buf[sz-1] != '$') {
+      typ = 1;
+      sz--;
+      memmove(buf, buf+1, sz);
+      buf[sz] = 0;
+    } else if (buf[0] != '^' && buf[sz-1] == '$') {
+      typ = 2;
+      buf[sz-1] = 0;
+      sz--;
+    } else {
+      typ = 0;
+    }
+    // fill in the structs
+    exlist[i].typ = typ;
+    exlist[i].text = xstrdup(buf);
+    exlist[i].len = sz;
+    cp +=strlen(cp)+1;
+  } // for()
+  exlist[count].typ = -1;
+  exlist[count].text = NULL;
+  exlist[count].len = 0;
+  for (i = 0; exlist[i].typ != -1; i++) {
+    fprintf(stderr, "%d\t%s\t%lu\n", exlist[i].typ, exlist[i].text,
+              exlist[i].len);
+  }
+  free (md->fro);
+  free(md);
+  return exlist;
+}
